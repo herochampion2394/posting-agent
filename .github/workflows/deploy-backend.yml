@@ -1,0 +1,51 @@
+name: Deploy Backend to Cloud Run
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'backend/**'
+      - '.github/workflows/deploy-backend.yml'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v1
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+      
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v1
+      
+      - name: Configure Docker for GCR
+        run: gcloud auth configure-docker ${{ secrets.GCP_REGION }}-docker.pkg.dev
+      
+      - name: Build and Push Docker Image
+        run: |
+          cd backend
+          docker build -t ${{ secrets.GCP_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/posting-agent/backend:${{ github.sha }} .
+          docker push ${{ secrets.GCP_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/posting-agent/backend:${{ github.sha }}
+      
+      - name: Deploy to Cloud Run
+        run: |
+          gcloud run deploy posting-agent-backend \
+            --image ${{ secrets.GCP_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/posting-agent/backend:${{ github.sha }} \
+            --region ${{ secrets.GCP_REGION }} \
+            --platform managed \
+            --allow-unauthenticated \
+            --set-env-vars DATABASE_URL="${{ secrets.DATABASE_URL }}" \
+            --set-env-vars SECRET_KEY="${{ secrets.SECRET_KEY }}" \
+            --set-env-vars OPENAI_API_KEY="${{ secrets.OPENAI_API_KEY }}" \
+            --set-env-vars TWITTER_API_KEY="${{ secrets.TWITTER_API_KEY }}" \
+            --set-env-vars TWITTER_API_SECRET="${{ secrets.TWITTER_API_SECRET }}" \
+            --set-env-vars TWITTER_CALLBACK_URL="${{ secrets.TWITTER_CALLBACK_URL }}" \
+            --set-env-vars TIKTOK_CLIENT_KEY="${{ secrets.TIKTOK_CLIENT_KEY }}" \
+            --set-env-vars TIKTOK_CLIENT_SECRET="${{ secrets.TIKTOK_CLIENT_SECRET }}" \
+            --set-env-vars TIKTOK_REDIRECT_URI="${{ secrets.TIKTOK_REDIRECT_URI }}" \
+            --memory 512Mi \
+            --cpu 1 \
+            --timeout 300
